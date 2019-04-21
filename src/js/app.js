@@ -63,6 +63,12 @@ App = {
         $("#ownerAllPlayersButton").on('click', function () {
             App.getOwnerAllPlayers();
         });
+        $("#ownerAllTransferPlayersButton").on('click', function () {
+            App.getOwnerAllTransferPlayers();
+        });
+        $("#ownerAllAvailablePlayersButton").on('click', function () {
+            App.getOwnerAllAvailablePlayers();
+        });
         $("#allPlayersButton").on('click', function () {
             App.getAllPlayers();
         });
@@ -73,16 +79,12 @@ App = {
             App.getAllAvailablePlayers();
         });
         $("#buyPlayerButton").on('click', function () {
-            var playerId = $("#playerIdInput").val();
-            // var playerCost = App.getPlayerSellPrice(playerId);
-            var playerCost = 10; // todo get price from api above
-            App.buyPlayer(playerId, playerCost);
+            App.buyPlayer(playerId);
 
         });
         $("#sellPlayerButton").on('click', function () {
             var playerId = $("#playerIdInput").val();
-            // var price = $("#price").val();
-            var price = 10;
+            var price = $("#price").val();
             App.preparePlayerForTransfer(playerId, price);
         });
         $("#testButton").on('click', function () {
@@ -92,6 +94,7 @@ App = {
             App.getPlayerSellPrice(playerId);
             App.getPlayerName(playerId);
             App.getPlayersCount();
+            // App.getTest();
         });
     },
     listenForEvents: function () {
@@ -124,56 +127,177 @@ App = {
             });
         });
     },
-    getOwnerAllPlayers: function () {
-        web3.eth.getAccounts(function (error, accounts) {
-            if (error) {
-                console.log(error);
-            }
-            let currAccount = accounts[0];
+    getOwnerAllAvailablePlayers: function () {
+        App.getAllOwnerPlayersDependsOnStatus(false);
+    },
 
-            App.contracts.Football.deployed()
-                .then(function (instance) {
-                    return instance.getAllPlayers.call();
-                })
-                .then(function (data) {
-                    //todo sort items
-                    console.log("getAllPlayers: " + data);
-                    console.log("currentAccount: " + currAccount);
-                    $.each(data, function (index, playerId) {
-                        var playerOwner = App.getPlayerOwner(playerId);
-                        playerOwner.then(function (playerOwnerAddress) {
-                            console.log("player owner: " + playerOwnerAddress);
-                        });
+    getOwnerAllTransferPlayers: function () {
+        App.getAllOwnerPlayersDependsOnStatus(true);
+    },
+
+    getOwnerAllPlayers: function () {
+        return new Promise(function (resolve, reject) {
+            web3.eth.getAccounts(function (error, accounts) {
+                if (error) {
+                    console.log(error);
+                }
+                let currAccount = accounts[0];
+
+                App.contracts.Football.deployed()
+                    .then(function (instance) {
+                        return instance.getAllPlayers.call();
                     })
-                }).catch(function (err) {
-                console.log(err.message);
+                    .then(function (playersIds) {
+                        var resultArray = [];
+                        $.each(playersIds, function (index, playerId) {
+                            var state = App.contracts.Football.deployed()
+                                .then(function (instance) {
+                                    return instance.getPlayerOwner.call(playerId);
+                                })
+                                .then(function (playerOwner) {
+                                    if (playerOwner == currAccount) {
+                                        return playerId;
+                                    }
+                                });
+                            resultArray.push(state);
+                        });
+                        return resultArray;
+
+                    })
+                    .then(function (promisesArray) {
+                        Promise.all(promisesArray).then(values => {
+                            var filteredValues = values.filter(function (el) {
+                                return el != null;
+                            });
+                            console.log("Owner all players:" + filteredValues);
+                            resolve(filteredValues);
+                        })
+                    })
+                    .catch(function (err) {
+                        console.log(err.message);
+                    })
+
             });
         });
     }, getAllPlayers: function () {
+        return new Promise(function (resolve, reject) {
+            web3.eth.getAccounts(function (error, accounts) {
+                if (error) {
+                    console.log(error);
+                }
+
+                App.contracts.Football.deployed()
+                    .then(function (instance) {
+                        return instance.getAllPlayers.call();
+                    })
+                    .then(function (allPlayers) {
+                        console.log("All players: " + allPlayers);
+                        resolve(allPlayers);
+                    })
+                    .catch(function (err) {
+                        console.log(err.message);
+                    });
+
+            });
+        })
+
+    }, getAllPlayersDependsOnStatus:
+
+        function (isTransferStatus) {
+            web3.eth.getAccounts(function (error, accounts) {
+                if (error) {
+                    console.log(error);
+                }
+
+                // App.contracts.Football.deployed()
+                //     .then(function (instance) {
+                //         return instance.getAllPlayers.call();
+                //     })
+                App.getAllPlayers()
+                    .then(function (playersIds) {
+                        var resultArray = [];
+                        $.each(playersIds, function (index, playerId) {
+                            var state = App.contracts.Football.deployed()
+                                .then(function (instance) {
+                                    return instance.isPlayerInTransfer.call(playerId);
+                                })
+                                .then(function (isPlayerInTransfer) {
+                                    console.log("isPlayerInTransfer: " + isPlayerInTransfer);
+                                    if (isTransferStatus == isPlayerInTransfer) {
+                                        return playerId;
+                                    }
+                                });
+                            resultArray.push(state);
+                        });
+                        return resultArray;
+                    })
+                    .then(function (promisesArray) {
+                        Promise.all(promisesArray).then(values => {
+                            var filteredValues = values.filter(function (el) {
+                                return el != null;
+                            });
+                            console.log("values:" + filteredValues);
+                            return filteredValues;
+                        })
+                    })
+                    .catch(function (err) {
+                        console.log(err.message);
+                    })
+
+            });
+
+        }
+
+    ,
+    getAllOwnerPlayersDependsOnStatus: function (isTransferStatus) {
         web3.eth.getAccounts(function (error, accounts) {
             if (error) {
                 console.log(error);
             }
 
-            App.contracts.Football.deployed()
-                .then(function (instance) {
-                    return instance.getAllPlayers.call();
+            App.getOwnerAllPlayers()
+                .then(function (playersIds) {
+                    var resultArray = [];
+                    $.each(playersIds, function (index, playerId) {
+                        var state = App.contracts.Football.deployed()
+                            .then(function (instance) {
+                                return instance.isPlayerInTransfer.call(playerId);
+                            })
+                            .then(function (isPlayerInTransfer) {
+                                console.log("isPlayerInTransfer: " + isPlayerInTransfer);
+                                if (isTransferStatus == isPlayerInTransfer) {
+                                    return playerId;
+                                }
+                            });
+                        resultArray.push(state);
+                    });
+                    return resultArray;
                 })
-                .then(function (data) {
-                    console.log("getAllPlayers: " + data);
+                .then(function (promisesArray) {
+                    Promise.all(promisesArray).then(values => {
+                        var filteredValues = values.filter(function (el) {
+                            return el != null;
+                        });
+                        console.log("values:" + filteredValues);
+                        return filteredValues;
+                    })
+                })
+                .catch(function (err) {
+                    console.log(err.message);
+                })
 
-                }).catch(function (err) {
-                console.log(err.message);
-            });
         });
-    }, getAllTransferPlayers: function () {
-        //todo: get all players and filter them
 
-    },
+    }
+    ,
+    getAllTransferPlayers: function () {
+        return App.getAllPlayersDependsOnStatus(true);
+    }
+    ,
     getAllAvailablePlayers: function () {
-        //todo: get all players and filter them
-
-    },
+        return App.getAllPlayersDependsOnStatus(false);
+    }
+    ,
     isPlayerInTransfer: function (playerId) {
         web3.eth.getAccounts(function (error, accounts) {
             if (error) {
@@ -191,7 +315,9 @@ App = {
                 console.log(err.message);
             });
         });
-    }, getPlayerSellPrice: async function (playerId) {
+    }
+    ,
+    getPlayerSellPrice: async function (playerId) {
         web3.eth.getAccounts(function (error, accounts) {
             if (error) {
                 console.log(error);
@@ -208,7 +334,9 @@ App = {
                 console.log(err.message);
             });
         });
-    }, getPlayerOwner: async function (playerId) {
+    }
+    ,
+    getPlayerOwner: async function (playerId) {
         web3.eth.getAccounts(function (error, accounts) {
             if (error) {
                 console.log(error);
@@ -225,7 +353,9 @@ App = {
                 console.log(err.message);
             });
         });
-    }, getPlayerName: async function (playerId) {
+    }
+    ,
+    getPlayerName: async function (playerId) {
         web3.eth.getAccounts(function (error, accounts) {
             if (error) {
                 console.log(error);
@@ -242,7 +372,9 @@ App = {
                 console.log(err.message);
             });
         });
-    }, getPlayersCount: async function () {
+    }
+    ,
+    getPlayersCount: async function () {
         web3.eth.getAccounts(function (error, accounts) {
             if (error) {
                 console.log(error);
@@ -259,25 +391,28 @@ App = {
                 console.log(err.message);
             });
         });
-    },
-    buyPlayer: function (playerId, playerSellCost) {
+    }
+    ,
+    buyPlayer: function (playerId) {
         web3.eth.getAccounts(async function (error, accounts) {
             if (error) {
                 console.log(error);
             }
-
             App.contracts.Football.deployed()
                 .then(function (instance) {
-                    var playerCost = web3.toWei(playerSellCost);
-                    return instance.buyPlayer(playerId, {value: playerCost, from: App.account});
-                })
-                .then(function (data) {
-                    console.log("data: " + data);
-                }).catch(function (err) {
+                    return instance.getPlayerSellPrice.call(playerId);
+                }).then(function (playerSellCost) {
+                App.contracts.Football.deployed()
+                    .then(function (instance) {
+                        var playerCost = web3.toWei(playerSellCost);
+                        return instance.buyPlayer(playerId, {value: playerCost, from: App.account});
+                    })
+            }).catch(function (err) {
                 console.log(err.message);
             });
         });
-    },
+    }
+    ,
     preparePlayerForTransfer: function (playerId, sellPrice) {
         web3.eth.getAccounts(function (error, accounts) {
             if (error) {
@@ -294,25 +429,47 @@ App = {
                 console.log(err.message);
             });
         });
-    }, getTest: function () {
+    }
+    ,
+    getTest: function () {
         web3.eth.getAccounts(function (error, accounts) {
             if (error) {
                 console.log(error);
             }
 
+
             App.contracts.Football.deployed()
                 .then(function (instance) {
                     return instance.getAllPlayers.call();
+                }).then(function (playersIds) {
+                var resultArray = [];
+                $.each(playersIds, function (index, playerId) {
+                    var state = App.contracts.Football.deployed()
+                        .then(function (instance) {
+                            return instance.isPlayerInTransfer.call(playerId);
+                        })
+                        .then(function (data) {
+                            console.log("isPlayerInTransfer: " + data);
+                            return data;
+                        });
+                    resultArray.push(state);
+                });
+                return resultArray;
+
+            }).then(function (promisesArray) {
+                Promise.all(promisesArray).then(values => {
+                    console.log("values:" + values);
+                    return values;
                 })
-                .then(function (data) {
-                    console.log("data: " + data);
-                    console.log(App.isPlayerInTransfer(0))
-                    console.log(App.getPlayerSellPrice(0))
-                }).catch(function (err) {
+            }).catch(function (err) {
                 console.log(err.message);
-            });
+            })
+
+
         });
-    }, fillTestData: function () {
+    }
+    ,
+    fillTestData: function () {
         App.addPlayer($("#name1").val(), 1);
         App.addPlayer($("#name2").val(), 2);
         // App.addPlayer("Artsiom", 25);
@@ -324,10 +481,12 @@ App = {
         // App.addPlayer("Viktor", 25);
         // App.addPlayer("Alex", 25);
         // App.addPlayer("Vlad", 25);
-    },
+    }
+    ,
 
 
-};
+}
+;
 
 $(function () {
     $(window).load(function () {
